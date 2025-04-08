@@ -1,5 +1,5 @@
 '''
-python -m omniparserserver --som_model_path ../../weights/icon_detect/model.pt --caption_model_name florence2 --caption_model_path ../../weights/icon_caption_florence --device cuda --BOX_TRESHOLD 0.05
+python -m omniparserserver --device cuda
 '''
 
 import sys
@@ -18,7 +18,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='Omniparser API')
     parser.add_argument('--som_model_path', type=str, default='../../weights/icon_detect/model.pt', help='Path to the som model')
     parser.add_argument('--caption_model_name', type=str, default='florence2', help='Name of the caption model')
-    parser.add_argument('--caption_model_path', type=str, default='../../weights/icon_caption_florence', help='Path to the caption model')
+    parser.add_argument('--caption_model_path', type=str, default='../../weights/icon_caption', help='Path to the caption model')
     parser.add_argument('--device', type=str, default=detect_device(), help='Device to run the model')
     parser.add_argument('--BOX_TRESHOLD', type=float, default=0.05, help='Threshold for box detection')
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Host for the API')

@@ -1,6 +1,7 @@
-torch
+torch 
+torchvision 
+google-generativeai
 easyocr
-torchvision
 supervision==0.18.0
 openai==1.3.5
 transformers
@@ -30,5 +31,3 @@ screeninfo
 uiautomation
 dashscope
 groq
-google-genai
-tiktoken

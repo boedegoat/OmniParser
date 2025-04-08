@@ -1,7 +1,6 @@
 """
 python app.py --windows_host_url localhost:8006 --omniparser_server_url localhost:8000
 """
-
 import os
 from datetime import datetime
 from enum import StrEnum
@@ -27,7 +26,7 @@ CONFIG_DIR = Path("~/.anthropic").expanduser()
 API_KEY_FILE = CONFIG_DIR / "api_key"
 
 INTRO_TEXT = '''
-OmniParser lets you turn any vision-langauge model into an AI agent. We currently support **OpenAI (4o/o1/o3-mini), DeepSeek (R1), Qwen (2.5VL), Gemini(2.0-flash) or Anthropic Computer Use (Sonnet).**
+OmniParser lets you turn any vision-langauge model into an AI agent. We currently support **OpenAI (4o/o1/o3-mini), DeepSeek (R1), Qwen (2.5VL) or Anthropic Computer Use (Sonnet), also a gemini (2.0-flash, and 2.0-flash-thinking-exp).**
 
 Type a message and press submit to start OmniTool. Press stop to pause, and press the trash icon in the chat to clear the message history.
 '''
@@ -58,6 +57,8 @@ def setup_state(state):
         state["openai_api_key"] = os.getenv("OPENAI_API_KEY", "")
     if "anthropic_api_key" not in state:
         state["anthropic_api_key"] = os.getenv("ANTHROPIC_API_KEY", "")
+    if "googleai_api_key" not in state:
+        state["googleai_api_key"] = os.getenv("GOOGLEAI_API_KEY", "")
     if "api_key" not in state:
         state["api_key"] = ""
     if "auth_validated" not in state:
@@ -174,12 +175,19 @@ def chatbot_output_callback(message, chatbot_state, hide_images=False, sender="b
             return s[:max_length] + "..."
         return s
     # processing Anthropic messages
-    message = _render_message(message, hide_images)
+    rendered_message = _render_message(message, hide_images)
     
-    if sender == "bot":
-        chatbot_state.append((None, message))
-    else:
-        chatbot_state.append((message, None))
+    if rendered_message is not None:
+        if not isinstance(rendered_message, str):
+             print(f"Warning: rendered_message not string ({type(rendered_message)}), converting.")
+             try:
+                 rendered_message = str(rendered_message)
+             except Exception:
+                 rendered_message = "[Error Rendering]"
+
+        if rendered_message.strip() != "":
+             # Tambahkan sebagai DICTIONARY
+             chatbot_state.append({"role": "assistant", "content": rendered_message})
     
     # Create a concise version of the chatbot state for printing
     concise_state = [(_truncate_string(user_msg), _truncate_string(bot_msg))
@@ -219,17 +227,19 @@ def process_input(user_input, state):
     # Append the user message to state["messages"]
     state["messages"].append(
         {
-            "role": Sender.USER,
-            "content": [TextBlock(type="text", text=user_input)],
+            "role": Sender.USER.value,
+            "content": [{"type": "text", "text": user_input}],
         }
     )
 
     # Append the user's message to chatbot_messages with None for the assistant's reply
-    state['chatbot_messages'].append((user_input, None))
+    state['chatbot_messages'].append({"role": "user", "content": user_input})
     yield state['chatbot_messages']  # Yield to update the chatbot UI with the user's message
 
     print("state")
     print(state)
+
+    print(f"Calling sampling_loop_sync with provider: {state['provider']}") #just for checking what model is using right now
 
     # Run sampling_loop_sync with the chatbot_output_callback
     for loop_msg in sampling_loop_sync(
@@ -241,8 +251,9 @@ def process_input(user_input, state):
         api_response_callback=partial(_api_response_callback, response_state=state["responses"]),
         api_key=state["api_key"],
         only_n_most_recent_images=state["only_n_most_recent_images"],
-        max_tokens=8192,
-        omniparser_url=args.omniparser_server_url
+        max_tokens=16384,
+        omniparser_url=args.omniparser_server_url,
+        save_folder = "./uploads/" + datetime.now().strftime("%Y%m%d_%H%M%S") if "orchestrated" in state["model"] else None
     ):  
         if loop_msg is None or state.get("stop"):
             yield state['chatbot_messages']
@@ -302,7 +313,7 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
             with gr.Column():
                 model = gr.Dropdown(
                     label="Model",
-                    choices=["omniparser + gpt-4o", "omniparser + o1", "omniparser + o3-mini", "omniparser + R1", "omniparser + qwen2.5vl", "claude-3-5-sonnet-20241022", "omniparser + gemini-2.0-flash", "omniparser + gpt-4o-orchestrated", "omniparser + o1-orchestrated", "omniparser + o3-mini-orchestrated", "omniparser + R1-orchestrated", "omniparser + qwen2.5vl-orchestrated"],
+                    choices=["omniparser + gpt-4o", "omniparser + o1", "omniparser + o3-mini", "omniparser + R1", "omniparser + qwen2.5vl", "claude-3-5-sonnet-20241022", "omniparser + gemini-2.0-flash", "omniparser + gemini-2.0-flash-thinking-exp", "omniparser + gpt-4o-orchestrated", "omniparser + o1-orchestrated", "omniparser + o3-mini-orchestrated", "omniparser + R1-orchestrated", "omniparser + qwen2.5vl-orchestrated", "omniparser + gemini-2.0-flash-orchestrated", "omniparser + gemini-2.0-flash-thinking-exp-orchestrated"],
                     value="omniparser + gpt-4o",
                     interactive=True,
                 )
@@ -342,7 +353,7 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
 
     with gr.Row():
         with gr.Column(scale=2):
-            chatbot = gr.Chatbot(label="Chatbot History", autoscroll=True, height=580)
+            chatbot = gr.Chatbot(label="Chatbot History", autoscroll=True, height=580, type='messages',)
         # with gr.Column(scale=3):
         #     iframe = gr.HTML(
         #         f'<iframe src="http://{args.windows_host_url}/vnc.html?view_only=1&autoconnect=1&resize=scale" width="100%" height="580" allow="fullscreen"></iframe>',
@@ -362,8 +373,8 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
             provider_choices = ["groq"]
         elif model_selection == "omniparser + qwen2.5vl":
             provider_choices = ["dashscope"]
-        elif model_selection == "omniparser + gemini-2.0-flash":
-            provider_choices = ["gemini"]
+        elif model_selection in set (["omniparser + gemini-2.0-flash", "omniparser + gemini-2.0-flash-thinking-exp", "omniparser + gemini-2.0-flash-orchestrated", "omniparser + gemini-2.0-flash-thinking-exp-orchestrated"]):
+            provider_choices = ["googleai"]
         else:
             provider_choices = [option.value for option in APIProvider]
         default_provider_value = provider_choices[0]
@@ -385,7 +396,7 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
             placeholder=api_key_placeholder,
             value=state["api_key"]
         )
-
+        print(f"Provider set to: {state['provider']}")
         return provider_update, api_key_update
 
     def update_only_n_images(only_n_images_value, state):
@@ -425,4 +436,4 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
     stop_button.click(stop_app, [state], None)
     
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7888)
+    demo.launch(server_name="localhost", server_port=7888)

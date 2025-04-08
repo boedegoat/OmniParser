@@ -26,7 +26,13 @@ class Omniparser(object):
             'thickness': max(int(3 * box_overlay_ratio), 1),
         }
 
-        (text, ocr_bbox), _ = check_ocr_box(image, display_img=False, output_bb_format='xyxy', easyocr_args={'text_threshold': 0.8}, use_paddleocr=False)
-        dino_labled_img, label_coordinates, parsed_content_list = get_som_labeled_img(image, self.som_model, BOX_TRESHOLD = self.config['BOX_TRESHOLD'], output_coord_in_ratio=True, ocr_bbox=ocr_bbox,draw_bbox_config=draw_bbox_config, caption_model_processor=self.caption_model_processor, ocr_text=text,use_local_semantics=True, iou_threshold=0.7, scale_img=False, batch_size=128)
+        (text, ocr_bbox), _ = check_ocr_box(image, display_img = True, output_bb_format='xyxy', goal_filtering=None, easyocr_args={'paragraph': False, 'text_threshold':0.9}, use_paddleocr=True)
+        def get_som_labeled_img_with_error_handling(*args, **kwargs):
+            try:
+                return get_som_labeled_img(*args, **kwargs)
+            except Exception as e:
+                print(f"Error in get_som_labeled_img: {e}")  # Print the error for debugging
+                return None, None, None
 
+        dino_labled_img, label_coordinates, parsed_content_list = get_som_labeled_img_with_error_handling(image, self.som_model, BOX_TRESHOLD = self.config['BOX_TRESHOLD'], output_coord_in_ratio=True, ocr_bbox=ocr_bbox,draw_bbox_config=draw_bbox_config, caption_model_processor=self.caption_model_processor, ocr_text=text,use_local_semantics=True, iou_threshold=0.1, scale_img=False, batch_size=8)
         return dino_labled_img, parsed_content_list

@@ -5,20 +5,19 @@ import uuid
 from PIL import Image, ImageDraw
 import base64
 from io import BytesIO
-import platform
-
 from anthropic import APIResponse
 from anthropic.types import ToolResultBlockParam
 from anthropic.types.beta import BetaMessage, BetaTextBlock, BetaToolUseBlock, BetaMessageParam, BetaUsage
 
+from agent.llm_utils.googleaiclient import run_gemini_interleaved
 from agent.llm_utils.oaiclient import run_oai_interleaved
 from agent.llm_utils.groqclient import run_groq_interleaved
-from agent.llm_utils.geminiclient import run_gemini_interleaved
 from agent.llm_utils.utils import is_image_path
 import time
 import re
 
 OUTPUT_DIR = "./tmp/outputs"
+
 
 def extract_data(input_string, data_type):
     # Regular expression to extract content starting from '```python' until the end if there are no closing backticks
@@ -51,8 +50,10 @@ class VLMAgent:
             self.model = "o1"
         elif model == "omniparser + o3-mini":
             self.model = "o3-mini"
-        elif model == "omniparser + gemini-2.0-flash":
+        elif model == "omniparser + gemini-2.0-flash": 
             self.model = "gemini-2.0-flash"
+        elif model == "omniparser + gemini-2.0-flash-thinking-exp": 
+            self.model = "gemini-2.0-flash-thinking-exp"
         else:
             raise ValueError(f"Model {model} not supported")
         
@@ -137,17 +138,17 @@ class VLMAgent:
             print(f"qwen token usage: {token_usage}")
             self.total_token_usage += token_usage
             self.total_cost += (token_usage * 2.2 / 1000000)  # https://help.aliyun.com/zh/model-studio/getting-started/models?spm=a2c4g.11186623.0.0.74b04823CGnPv7#fe96cfb1a422a
-        elif "gemini-2.0-flash" in self.model:
+        elif self.provider == "googleai":
             vlm_response, token_usage = run_gemini_interleaved(
                 messages=planner_messages,
                 system=system,
-                model_name=self.model,
+                model_name=self.model, # Nama API Gemini dari __init__
                 api_key=self.api_key,
-                temperature=0,
+                max_tokens=self.max_tokens,
+                temperature=0, # Atur suhu jika perlu
             )
             print(f"gemini token usage: {token_usage}")
-            self.total_token_usage += token_usage
-            self.total_cost += (token_usage * 0.99 / 1000000)
+            self.total_token_usage += token_usage['total_tokens']
         else:
             raise ValueError(f"Model {self.model} not supported")
         latency_vlm = time.time() - start
@@ -224,9 +225,9 @@ class VLMAgent:
 
     def _get_system_prompt(self, screen_info: str = ""):
         main_section = f"""
-You are using a {platform.system()} device.
+You are using a Windows device.
 You are able to use a mouse and keyboard to interact with the computer based on the given task and screenshot.
-You can only interact with the desktop GUI (no terminal or application menu access) and ignore the gradio interface (which opened in localhost:7888) including the orange send button there.
+You can only interact with the desktop GUI (no terminal or application menu access).
 
 You may be given some history plan and actions, this is the response from the previous loop.
 You should carefully consider your plan base on the task, screenshot, and history actions.

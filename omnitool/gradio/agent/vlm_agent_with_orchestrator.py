@@ -12,6 +12,7 @@ from anthropic import APIResponse
 from anthropic.types import ToolResultBlockParam
 from anthropic.types.beta import BetaMessage, BetaTextBlock, BetaToolUseBlock, BetaMessageParam, BetaUsage
 
+from agent.llm_utils.googleaiclient import run_gemini_interleaved
 from agent.llm_utils.oaiclient import run_oai_interleaved
 from agent.llm_utils.groqclient import run_groq_interleaved
 from agent.llm_utils.utils import is_image_path
@@ -73,7 +74,7 @@ class VLMOrchestratedAgent:
         max_tokens: int = 4096,
         only_n_most_recent_images: int | None = None,
         print_usage: bool = True,
-        save_folder: str = None,
+        save_folder: str | None = None,
     ):
         if model == "omniparser + gpt-4o" or model == "omniparser + gpt-4o-orchestrated":
             self.model = "gpt-4o-2024-11-20"
@@ -85,6 +86,10 @@ class VLMOrchestratedAgent:
             self.model = "o1"
         elif model == "omniparser + o3-mini" or model == "omniparser + o3-mini-orchestrated":
             self.model = "o3-mini"
+        elif model == "omniparser + gemini-2.0-flash" or model == "omniparser + gemini-2.0-flash-orchestrated": 
+            self.model = "gemini-2.0-flash"
+        elif model == "omniparser + gemini-2.0-flash-thinking-exp" or model == "omniparser + gemini-2.0-flash-thinking-exp-orchestrated": 
+            self.model = "gemini-2.0-flash-thinking-exp"
         else:
             raise ValueError(f"Model {model} not supported")
         
@@ -102,9 +107,11 @@ class VLMOrchestratedAgent:
         self.total_cost = 0
         self.step_count = 0
         self.plan, self.ledger = None, None
-
+        self._task = ""
         self.system = ''
     
+        self.gemini_model_instance = None
+        
     def __call__(self, messages: list, parsed_screen: list[str, list, dict]):
         if self.step_count == 0:
             plan = self._initialize_task(messages)
@@ -127,6 +134,7 @@ class VLMOrchestratedAgent:
 
         self.step_count += 1
         # save the image to the output folder
+        os.makedirs(self.save_folder, exist_ok=False)
         with open(f"{self.save_folder}/screenshot_{self.step_count}.png", "wb") as f:
             f.write(base64.b64decode(parsed_screen['original_screenshot_base64']))
         with open(f"{self.save_folder}/som_screenshot_{self.step_count}.png", "wb") as f:
@@ -194,6 +202,17 @@ class VLMOrchestratedAgent:
             print(f"qwen token usage: {token_usage}")
             self.total_token_usage += token_usage
             self.total_cost += (token_usage * 2.2 / 1000000)  # https://help.aliyun.com/zh/model-studio/getting-started/models?spm=a2c4g.11186623.0.0.74b04823CGnPv7#fe96cfb1a422a
+        elif self.provider == "googleai":
+            vlm_response, token_usage = run_gemini_interleaved(
+                messages=planner_messages,
+                system=system,
+                model_name=self.model, # Nama API Gemini dari __init__
+                api_key=self.api_key,
+                max_tokens=self.max_tokens,
+                temperature=0, # Atur suhu jika perlu
+            )
+            print(f"gemini token usage: {token_usage}")
+            self.total_token_usage += token_usage['total_tokens']
         else:
             raise ValueError(f"Model {self.model} not supported")
         latency_vlm = time.time() - start
@@ -381,15 +400,31 @@ IMPORTANT NOTES:
         plan_prompt = self._get_plan_prompt(self._task)
         input_message = copy.deepcopy(messages)
         input_message.append({"role": "user", "content": plan_prompt})
-        vlm_response, token_usage = run_oai_interleaved(
-                messages=input_message,
-                system="",
-                model_name=self.model,
-                api_key=self.api_key,
-                max_tokens=self.max_tokens,
-                provider_base_url="https://api.openai.com/v1",
-                temperature=0,
-            )
+        if self.provider == "openai":
+            vlm_response, token_usage = run_oai_interleaved(
+                    messages=input_message,
+                    system="",
+                    model_name=self.model,
+                    api_key=self.api_key,
+                    max_tokens=self.max_tokens,
+                    provider_base_url="https://api.openai.com/v1",
+                    temperature=0,
+                )
+        elif self.provider == "groq":
+            vlm_response, token_usage_data = run_groq_interleaved(
+                    messages=input_message, system="", model_name=self.model, api_key=self.api_key,
+                    max_tokens=self.max_tokens,
+                )
+        elif self.provider == "dashscope":
+            vlm_response, token_usage_data = run_oai_interleaved(
+                    messages=input_message, system="", model_name=self.model, api_key=self.api_key,
+                    max_tokens=min(2048, self.max_tokens), provider_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", temperature=0,
+                )
+        elif self.provider == "googleai":
+            vlm_response, token_usage_data = run_gemini_interleaved(
+                    messages=input_message, system="", model_name=self.model, api_key=self.api_key,
+                    max_tokens=self.max_tokens, temperature=0,
+                )
         plan = extract_data(vlm_response, "json")
         
         # Create a filename with timestamp
@@ -413,15 +448,31 @@ IMPORTANT NOTES:
         update_ledger_prompt = ORCHESTRATOR_LEDGER_PROMPT.format(task=self._task)
         input_message = copy.deepcopy(messages)
         input_message.append({"role": "user", "content": update_ledger_prompt})
-        vlm_response, token_usage = run_oai_interleaved(
-                messages=input_message,
-                system="",
-                model_name=self.model,
-                api_key=self.api_key,
-                max_tokens=self.max_tokens,
-                provider_base_url="https://api.openai.com/v1",
-                temperature=0,
-            )
+        if self.provider == "openai":
+            vlm_response, token_usage = run_oai_interleaved(
+                    messages=input_message,
+                    system="",
+                    model_name=self.model,
+                    api_key=self.api_key,
+                    max_tokens=self.max_tokens,
+                    provider_base_url="https://api.openai.com/v1",
+                    temperature=0,
+                )
+        elif self.provider == "groq":
+            vlm_response, token_usage_data = run_groq_interleaved(
+                    messages=input_message, system="", model_name=self.model, api_key=self.api_key,
+                    max_tokens=self.max_tokens,
+                )
+        elif self.provider == "dashscope":
+            vlm_response, token_usage_data = run_oai_interleaved(
+                    messages=input_message, system="", model_name=self.model, api_key=self.api_key,
+                    max_tokens=min(2048, self.max_tokens), provider_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", temperature=0,
+                )
+        elif self.provider == "googleai":
+            vlm_response, token_usage_data = run_gemini_interleaved(
+                    messages=input_message, system="", model_name=self.model, api_key=self.api_key,
+                    max_tokens=self.max_tokens, temperature=0,
+                )
         updated_ledger = extract_data(vlm_response, "json")
         return updated_ledger
     
