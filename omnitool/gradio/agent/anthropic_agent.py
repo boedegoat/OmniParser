@@ -31,12 +31,9 @@ from io import BytesIO
 import gradio as gr
 from typing import Dict
 
-BETA_FLAG = "computer-use-2024-10-22"
+from agent.models import LLM_Provider
 
-class APIProvider(StrEnum):
-    ANTHROPIC = "anthropic"
-    BEDROCK = "bedrock"
-    VERTEX = "vertex"
+BETA_FLAG = "computer-use-2024-10-22"
 
 SYSTEM_PROMPT = f"""<SYSTEM_CAPABILITY>
 * You are utilizing a {platform.system()} system with internet access.
@@ -49,7 +46,7 @@ class AnthropicActor:
         self, 
         args,
         model: str, 
-        provider: APIProvider,
+        provider: LLM_Provider,
         api_key: str,
         api_response_callback: Callable[[APIResponse[BetaMessage]], None],
         max_tokens: int = 4096,
@@ -72,11 +69,11 @@ class AnthropicActor:
         self.print_usage = print_usage
 
         # Instantiate the appropriate API client based on the provider
-        if provider == APIProvider.ANTHROPIC:
+        if provider == LLM_Provider.ANTHROPIC:
             self.client = Anthropic(api_key=api_key)
-        elif provider == APIProvider.VERTEX:
+        elif provider == LLM_Provider.VERTEX:
             self.client = AnthropicVertex()
-        elif provider == APIProvider.BEDROCK:
+        elif provider == LLM_Provider.BEDROCK:
             self.client = AnthropicBedrock()
 
     def __call__(

@@ -1,7 +1,7 @@
 import requests
 from .utils import is_image_path, encode_image
 
-def run_oai_interleaved(messages: list, system: str, model_name: str, api_key: str, max_tokens=256, temperature=0, provider_base_url: str = "https://api.openai.com/v1"):    
+def run_oai_interleaved(messages: list, system: str, model, api_key: str, max_tokens=256, temperature=0, provider_base_url: str = "https://api.openai.com/v1"):    
     headers = {"Content-Type": "application/json",
                "Authorization": f"Bearer {api_key}"}
     final_messages = [{"role": "system", "content": system}]
@@ -12,8 +12,7 @@ def run_oai_interleaved(messages: list, system: str, model_name: str, api_key: s
             if isinstance(item, dict):
                 for cnt in item["content"]:
                     if isinstance(cnt, str):
-                        if is_image_path(cnt) and 'o3-mini' not in model_name:
-                            # 03 mini does not support images
+                        if is_image_path(cnt) and "image" in model["abilities"]:
                             base64_image = encode_image(cnt)
                             content = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                         else:
@@ -36,10 +35,10 @@ def run_oai_interleaved(messages: list, system: str, model_name: str, api_key: s
         final_messages = [{"role": "user", "content": messages}]
 
     payload = {
-        "model": model_name,
+        "model": model["name"],
         "messages": final_messages,
     }
-    if 'o1' in model_name or 'o3-mini' in model_name:
+    if "thinking" in model["abilities"]:
         payload['reasoning_effort'] = 'low'
         payload['max_completion_tokens'] = max_tokens
     else:

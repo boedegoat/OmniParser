@@ -243,7 +243,7 @@ class ComputerTool(BaseAnthropicTool):
             command_list[-1] = f"{prefix} print({action})"
 
         try:
-            print(f"sending to vm: {command_list}")
+            print(f"sending to host device: {command_list}")
 
             if self.args.host_device == "omnibox_windows":
                 response = requests.post(

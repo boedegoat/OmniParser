@@ -11,18 +11,20 @@ from pathlib import Path
 from typing import cast
 import argparse
 import gradio as gr
+from gradio_log import Log
 from anthropic import APIResponse
 from anthropic.types import TextBlock
 from anthropic.types.beta import BetaMessage, BetaTextBlock, BetaToolUseBlock
 from anthropic.types.tool_use_block import ToolUseBlock
 from loop import (
-    APIProvider,
     sampling_loop_sync,
 )
 from tools import ToolResult
 import requests
 from requests.exceptions import RequestException
 import base64
+
+from agent.models import llm, LLM_Provider
 
 CONFIG_DIR = Path("~/.anthropic").expanduser()
 API_KEY_FILE = CONFIG_DIR / "api_key"
@@ -53,13 +55,9 @@ def setup_state(state):
     if "messages" not in state:
         state["messages"] = []
     if "model" not in state:
-        state["model"] = "omniparser + gpt-4o"
+        state["model"] = llm.default_model_label
     if "provider" not in state:
-        state["provider"] = "openai"
-    if "openai_api_key" not in state:  # Fetch API keys from environment variables
-        state["openai_api_key"] = os.getenv("OPENAI_API_KEY", "")
-    if "anthropic_api_key" not in state:
-        state["anthropic_api_key"] = os.getenv("ANTHROPIC_API_KEY", "")
+        state["provider"] = llm.default_model["providers"][0]
     if "api_key" not in state:
         state["api_key"] = ""
     if "auth_validated" not in state:
@@ -80,16 +78,16 @@ async def main(state):
     setup_state(state)
     return "Setup completed"
 
-def validate_auth(provider: APIProvider, api_key: str | None):
-    if provider == APIProvider.ANTHROPIC:
+def validate_auth(provider: LLM_Provider, api_key: str | None):
+    if provider == LLM_Provider.ANTHROPIC:
         if not api_key:
             return "Enter your Anthropic API key to continue."
-    if provider == APIProvider.BEDROCK:
+    if provider == LLM_Provider.BEDROCK:
         import boto3
 
         if not boto3.Session().get_credentials():
             return "You must have AWS credentials set up to use the Bedrock API."
-    if provider == APIProvider.VERTEX:
+    if provider == LLM_Provider.VERTEX:
         import google.auth
         from google.auth.exceptions import DefaultCredentialsError
 
@@ -309,8 +307,8 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
             with gr.Column():
                 model = gr.Dropdown(
                     label="Model",
-                    choices=["omniparser + gpt-4o", "omniparser + o1", "omniparser + o3-mini", "omniparser + R1", "omniparser + qwen2.5vl", "claude-3-5-sonnet-20241022", "omniparser + gemini-2.0-flash", "omniparser + gemini-2.5-flash-preview-04-17", "omniparser + gpt-4o-orchestrated", "omniparser + o1-orchestrated", "omniparser + o3-mini-orchestrated", "omniparser + R1-orchestrated", "omniparser + qwen2.5vl-orchestrated", "omniparser + gemini-2.0-flash-orchestrated", "omniparser + gemini-2.5-flash-preview-04-17-orchestrated"],
-                    value="omniparser + gpt-4o",
+                    choices=llm.model_labels,
+                    value=llm.default_model_label,
                     interactive=True,
                 )
             with gr.Column():
@@ -326,8 +324,8 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
             with gr.Column(1):
                 provider = gr.Dropdown(
                     label="API Provider",
-                    choices=[option.value for option in APIProvider],
-                    value="openai",
+                    choices=[option.value for option in LLM_Provider],
+                    value=llm.default_model["providers"][0],
                     interactive=False,
                 )
             with gr.Column(2):
@@ -359,21 +357,12 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
                 )
 
     def update_model(model_selection, state):
+        model_data = llm.get_model_data(label=model_selection)
+
         state["model"] = model_selection
-        print(f"Model updated to: {state['model']}")
-        
-        if model_selection == "claude-3-5-sonnet-20241022":
-            provider_choices = [option.value for option in APIProvider if option.value != "openai"]
-        elif model_selection in set(["omniparser + gpt-4o", "omniparser + o1", "omniparser + o3-mini", "omniparser + gpt-4o-orchestrated", "omniparser + o1-orchestrated", "omniparser + o3-mini-orchestrated"]):
-            provider_choices = ["openai"]
-        elif model_selection == "omniparser + R1":
-            provider_choices = ["groq"]
-        elif model_selection == "omniparser + qwen2.5vl":
-            provider_choices = ["dashscope"]
-        elif model_selection in set(["omniparser + gemini-2.0-flash", "omniparser + gemini-2.5-flash-preview-04-17", "omniparser + gemini-2.0-flash-orchestrated", "omniparser + gemini-2.5-flash-preview-04-17-orchestrated"]):
-            provider_choices = ["gemini"]
-        else:
-            provider_choices = [option.value for option in APIProvider]
+        print(f"Model updated to: {model_selection}")
+
+        provider_choices = model_data["providers"]
         default_provider_value = provider_choices[0]
 
         provider_interactive = len(provider_choices) > 1

@@ -22,7 +22,6 @@ import requests
 from requests.exceptions import RequestException
 
 from loop import (
-    APIProvider,
     sampling_loop_sync,
 )
 from tools import ToolResult

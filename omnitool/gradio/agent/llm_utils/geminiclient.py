@@ -14,7 +14,7 @@ class Action(BaseModel):
     box_id: str | None = Field(None, alias="Box ID")
     value: str | None = None
 
-def run_gemini_interleaved(messages: list, system: str, model_name: str, api_key: str, max_tokens: int, temperature=0):    
+def run_gemini_interleaved(messages: list, system: str, model, api_key: str, max_tokens: int, temperature=0):    
     """
     Run a chat completion through Google Gemini's API
     """
@@ -34,6 +34,7 @@ def run_gemini_interleaved(messages: list, system: str, model_name: str, api_key
         system_instruction=[
             types.Part.from_text(text=system),
         ],
+        thinking_config=types.ThinkingConfig(include_thoughts=True if "thinking" in model["abilities"] else None)
     )
 
     contents = []
@@ -43,7 +44,7 @@ def run_gemini_interleaved(messages: list, system: str, model_name: str, api_key
             if isinstance(item, dict):
                 for cnt in item["content"]:
                     if isinstance(cnt, str):
-                        if is_image_path(cnt):
+                        if is_image_path(cnt) and "image" in model["abilities"]:
                             contents.append(Image.open(cnt))
                         else:
                             contents.append(cnt)
@@ -58,7 +59,7 @@ def run_gemini_interleaved(messages: list, system: str, model_name: str, api_key
 
     try:
         response = client.models.generate_content(
-            model=model_name, 
+            model=model["name"], 
             contents=contents,
             config=generate_content_config
         )

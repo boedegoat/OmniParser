@@ -18,6 +18,8 @@ from agent.llm_utils.utils import is_image_path
 import time
 import re
 
+from agent.models import llm, LLM_Provider
+
 OUTPUT_DIR = "./tmp/outputs"
 
 def extract_data(input_string, data_type):
@@ -33,7 +35,7 @@ class VLMAgent:
     def __init__(
         self,
         model: str, 
-        provider: str, 
+        provider: LLM_Provider, 
         api_key: str,
         output_callback: Callable, 
         api_response_callback: Callable,
@@ -41,24 +43,7 @@ class VLMAgent:
         only_n_most_recent_images: int | None = None,
         print_usage: bool = True,
     ):
-        if model == "omniparser + gpt-4o":
-            self.model = "gpt-4o-2024-11-20"
-        elif model == "omniparser + R1":
-            self.model = "deepseek-r1-distill-llama-70b"
-        elif model == "omniparser + qwen2.5vl":
-            self.model = "qwen2.5-vl-72b-instruct"
-        elif model == "omniparser + o1":
-            self.model = "o1"
-        elif model == "omniparser + o3-mini":
-            self.model = "o3-mini"
-        elif model == "omniparser + gemini-2.0-flash":
-            self.model = "gemini-2.0-flash"
-        elif model == "omniparser + gemini-2.5-flash-preview-04-17": 
-            self.model = "gemini-2.5-flash-preview-04-17"
-        else:
-            raise ValueError(f"Model {model} not supported")
-        
-
+        self.model = llm.get_model_data(model)
         self.provider = provider
         self.api_key = api_key
         self.api_response_callback = api_response_callback
@@ -97,11 +82,11 @@ class VLMAgent:
             planner_messages[-1]["content"].append(f"{OUTPUT_DIR}/screenshot_som_{screenshot_uuid}.png")
 
         start = time.time()
-        if "gpt" in self.model or "o1" in self.model or "o3-mini" in self.model:
+        if self.provider == LLM_Provider.OPENAI:
             vlm_response, token_usage = run_oai_interleaved(
                 messages=planner_messages,
                 system=system,
-                model_name=self.model,
+                model=self.model,
                 api_key=self.api_key,
                 max_tokens=self.max_tokens,
                 provider_base_url="https://api.openai.com/v1",
@@ -109,57 +94,27 @@ class VLMAgent:
             )
             print(f"oai token usage: {token_usage}")
             self.total_token_usage += token_usage
-            if 'gpt' in self.model:
-                self.total_cost += (token_usage * 2.5 / 1000000)  # https://openai.com/api/pricing/
-            elif 'o1' in self.model:
-                self.total_cost += (token_usage * 15 / 1000000)  # https://openai.com/api/pricing/
-            elif 'o3-mini' in self.model:
-                self.total_cost += (token_usage * 1.1 / 1000000)  # https://openai.com/api/pricing/
-        elif "r1" in self.model:
-            vlm_response, token_usage = run_groq_interleaved(
-                messages=planner_messages,
-                system=system,
-                model_name=self.model,
-                api_key=self.api_key,
-                max_tokens=self.max_tokens,
-            )
-            print(f"groq token usage: {token_usage}")
-            self.total_token_usage += token_usage
-            self.total_cost += (token_usage * 0.99 / 1000000)
-        elif "qwen" in self.model:
-            vlm_response, token_usage = run_oai_interleaved(
-                messages=planner_messages,
-                system=system,
-                model_name=self.model,
-                api_key=self.api_key,
-                max_tokens=min(2048, self.max_tokens),
-                provider_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-                temperature=0,
-            )
-            print(f"qwen token usage: {token_usage}")
-            self.total_token_usage += token_usage
-            self.total_cost += (token_usage * 2.2 / 1000000)  # https://help.aliyun.com/zh/model-studio/getting-started/models?spm=a2c4g.11186623.0.0.74b04823CGnPv7#fe96cfb1a422a
-        elif "gemini" in self.model:
+        elif self.provider == LLM_Provider.GEMINI:
             vlm_response, token_usage = run_gemini_interleaved(
                 messages=planner_messages,
                 system=system,
-                model_name=self.model,
+                model=self.model,
                 api_key=self.api_key,
                 max_tokens=self.max_tokens,
                 temperature=0,
             )
             print(f"gemini token usage: {token_usage}")
             self.total_token_usage += token_usage
-            self.total_cost += 0 # assume using free tier
         else:
             raise ValueError(f"Model {self.model} not supported")
         latency_vlm = time.time() - start
+
         self.output_callback(f"LLM: {latency_vlm:.2f}s, OmniParser: {latency_omniparser:.2f}s", sender="bot")
 
         print(f"{vlm_response}")
         
         if self.print_usage:
-            print(f"Total token so far: {self.total_token_usage}. Total cost so far: $USD{self.total_cost:.5f}")
+            print(f"Total token so far: {self.total_token_usage}")
         
         vlm_response_json = extract_data(vlm_response, "json")
         vlm_response_json = json.loads(vlm_response_json)
@@ -231,7 +186,7 @@ You are using a {platform.system()} device.
 You are able to use a mouse and keyboard to interact with the computer based on the given task and screenshot.
 You can only interact with the desktop GUI (no terminal or application menu access)
 
-!!!DO NOT interact with the chatbot webpage interface that opens in 0.0.0.0:7888. You don't need to click the orange send button because the user already clicked it!!!
+!!!DO NOT interact with the chatbot gradio web interface that opened in 0.0.0.0:7888!!!
 
 You may be given some history plan and actions, this is the response from the previous loop.
 You should carefully consider your plan base on the task, screenshot, and history actions.

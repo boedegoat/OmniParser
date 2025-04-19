@@ -38,9 +38,14 @@ class OmniParserClient:
         screen_info = ""
         for idx, element in enumerate(response_json["parsed_content_list"]):
             element['idx'] = idx
+            screen_info += f'ID: {idx}, '
+
             if element['type'] == 'text':
-                screen_info += f'ID: {idx}, Text: {element["content"]}\n'
+                screen_info += f'Text: {element["content"]}'
             elif element['type'] == 'icon':
-                screen_info += f'ID: {idx}, Icon: {element["content"]}\n'
+                screen_info += f'Icon: {element["content"]}'
+
+            screen_info += '\n'
+            
         response_json['screen_info'] = screen_info
         return response_json
