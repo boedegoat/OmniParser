@@ -48,7 +48,7 @@ class LLM:
     def __init__(self):
         self.model_labels = list(LLM_MODELS.keys())
 
-        self.default_model_label = "OmniParser + Gemini 2.5 Flash"
+        self.default_model_label = "OmniParser + Gemini 2.0 Flash"
 
         if self.default_model_label not in LLM_MODELS:
              # Fallback to the first available label if the default isn't found

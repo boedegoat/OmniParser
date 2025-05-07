@@ -2,9 +2,7 @@ import os
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
-from typing import Optional
 from PIL import Image
-from pprint import pprint
 
 from .utils import is_image_path, encode_image
 
@@ -34,7 +32,7 @@ def run_gemini_interleaved(messages: list, system: str, model, api_key: str, max
         system_instruction=[
             types.Part.from_text(text=system),
         ],
-        thinking_config=types.ThinkingConfig(include_thoughts=True if "thinking" in model["abilities"] else None)
+        thinking_config=types.ThinkingConfig(include_thoughts=True) if "thinking" in model["abilities"] else None
     )
 
     contents = []
